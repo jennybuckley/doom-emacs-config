@@ -161,12 +161,23 @@
 
 ;; Replace U+23FA (⏺ Black Circle for Record) with a monospace-safe bullet.
 ;; Apple Color Emoji renders it proportionally, breaking vterm column alignment.
-(unless standard-display-table
-  (setq standard-display-table (make-display-table)))
-(aset standard-display-table #x23FA (vconcat "●"))
-(aset standard-display-table #x23F8 (vconcat "▮▮"))
-(aset standard-display-table #x23F5 (vconcat "▸"))
-(aset standard-display-table #x276F (vconcat ">"))
+;; Standard display table for non-vterm buffers:
+(add-hook! 'doom-init-ui-hook
+  (unless standard-display-table
+    (setq standard-display-table (make-display-table)))
+  (aset standard-display-table #x23FA (vconcat "●"))
+  (aset standard-display-table #x23F8 (vconcat "▮▮"))
+  (aset standard-display-table #x23F5 (vconcat "▸"))
+  (aset standard-display-table #x276F (vconcat ">")))
+;; Vterm creates a buffer-local display table that overrides standard-display-table,
+;; so we must patch it there too.
+(after! vterm
+  (add-hook! 'vterm-mode-hook
+    (when buffer-display-table
+      (aset buffer-display-table #x23FA (vconcat "●"))
+      (aset buffer-display-table #x23F8 (vconcat "▮▮"))
+      (aset buffer-display-table #x23F5 (vconcat "▸"))
+      (aset buffer-display-table #x276F (vconcat ">")))))
 
 (setq kill-ring-max 100000)
 (display-battery-mode t)
@@ -860,3 +871,6 @@ If found, the class name is returned, otherwise STR is returned"
 (use-package! centered-cursor-mode
   :config
   (global-centered-cursor-mode 1))
+
+;; Use normal permission mode for claude-repl (don't skip permissions)
+(setq claude-repl-skip-permissions nil)

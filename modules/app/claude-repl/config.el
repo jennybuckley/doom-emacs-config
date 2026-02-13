@@ -538,6 +538,7 @@ On first title change, reveal panels (Claude is ready)."
           (puthash ws t claude-repl--permission-workspaces))
         (delete-file file)))))
 
+(require 'filenotify)
 (let ((dir (expand-file-name "~/.claude/workspace-notifications")))
   (make-directory dir t)
   (file-notify-add-watch dir '(change) #'claude-repl--on-permission-notify))
