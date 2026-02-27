@@ -1435,6 +1435,18 @@ Without region: sends file path and current line."
   (interactive)
   (claude-repl--send-to-claude claude-repl-update-pr-prompt))
 
+(defcustom claude-repl-fresh-branch-name "new-branch"
+  "Default branch name used by `claude-repl-fresh-branch'."
+  :type 'string
+  :group 'claude-repl)
+
+(defun claude-repl-fresh-branch (name)
+  "Ask Claude to create a fresh branch NAME reset to origin/master."
+  (interactive (list (read-string "Branch name: " claude-repl-fresh-branch-name)))
+  (claude-repl--send-to-claude
+   (format "We need to create a fresh branch. Run the following commands:\ngit fetch\ngit branch %s\ngit checkout %s\ngit reset --hard origin/master"
+           name name)))
+
 (defcustom claude-repl-update-pr-diff-prompt
   "please update the PR description"
   "Prompt sent to Claude by update-pr-diff commands."
@@ -3007,7 +3019,9 @@ Switches to master, then cherry-picks commits from the current workspace."
       :desc "Kill Claude" "o C" #'claude-repl-kill
       :desc "Claude interrupt" "o x" #'claude-repl-interrupt
       :desc "Copy file reference" "o r" #'claude-repl-copy-reference
-      :desc "Switch sandbox/bare-metal" "o s" #'claude-repl-switch-environment)
+      :desc "Switch sandbox/bare-metal" "o s" #'claude-repl-switch-environment
+      :desc "Update PR description" "o R" #'claude-repl-update-pr
+      :desc "Fresh branch" "o b" #'claude-repl-fresh-branch)
 
 (map! :leader
       (:prefix "p"
