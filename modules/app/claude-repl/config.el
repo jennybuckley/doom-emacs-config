@@ -2006,7 +2006,7 @@ prompts (with a 0.3s delay), and auto-opens panels if appropriate."
         (progn
           (claude-repl--log "first-ready no pending prompts for ws=%s" ws)
           (when (string= ws (+workspace-current-name))
-            (claude-repl)))))))
+            (claude-repl))))))))
 
 (defun claude-repl--on-title-change (title)
   "Detect first terminal title set to trigger ready handshake."
