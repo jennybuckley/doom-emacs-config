@@ -1071,3 +1071,8 @@ If found, the class name is returned, otherwise STR is returned"
 
 ;; Disable desktop notifications from claude-repl
 (setq claude-repl--notify-fn #'ignore)
+
+(map! :leader
+      :prefix "TAB"
+      "<" #'+workspace/swap-left
+      ">" #'+workspace/swap-right)
