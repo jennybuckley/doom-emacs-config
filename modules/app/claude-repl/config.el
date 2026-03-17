@@ -2152,9 +2152,16 @@ for a single file creation; the first handler deletes the file)."
         (claude-repl--handle-prompt-submit-file file))))))
 
 (require 'filenotify)
+(defvar claude-repl--permission-watch nil
+  "File-notify watch descriptor for the workspace-notifications directory.
+Cancelled and reset whenever this file is re-evaluated.")
+(when claude-repl--permission-watch
+  (file-notify-rm-watch claude-repl--permission-watch)
+  (setq claude-repl--permission-watch nil))
 (let ((dir (expand-file-name "~/.claude/workspace-notifications")))
   (make-directory dir t)
-  (file-notify-add-watch dir '(change) #'claude-repl--on-workspace-notify))
+  (setq claude-repl--permission-watch
+        (file-notify-add-watch dir '(change) #'claude-repl--on-workspace-notify)))
 
 (defun claude-repl--do-refresh ()
   "Low-level refresh of the current vterm buffer.
