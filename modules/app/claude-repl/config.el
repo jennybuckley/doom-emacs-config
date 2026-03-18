@@ -1447,6 +1447,18 @@ Without region: sends file path and current line."
    (format "We need to create a fresh branch. Run the following commands:\ngit fetch\ngit branch %s\ngit checkout %s\ngit reset --hard origin/master"
            name name)))
 
+(defun claude-repl-rebase-upstream ()
+  "Ask Claude to rebase the doom config onto upstream/master."
+  (interactive)
+  (claude-repl--send-to-claude
+   "There are upstream changes to the doom emacs config, commit any uncommitted changes on master, then:\n\ngit fetch upstream\ngit rebase upstream/master\nif conflicts:\n  <resolve conflicts>\n  git rebase --continue\ngit push -f"))
+
+(defun claude-repl-merge-master ()
+  "Ask Claude to fetch and merge origin/master, resolving conflicts if needed."
+  (interactive)
+  (claude-repl--send-to-claude
+   "git fetch\ngit merge origin/master\nif conflicts:\n  <resolve conflicts>\n  git merge --continue\ngit push"))
+
 (defcustom claude-repl-update-pr-diff-prompt
   "please update the PR description"
   "Prompt sent to Claude by update-pr-diff commands."
@@ -3028,7 +3040,9 @@ Switches to master, then cherry-picks commits from the current workspace."
       :desc "Copy file reference" "o r" #'claude-repl-copy-reference
       :desc "Switch sandbox/bare-metal" "o s" #'claude-repl-switch-environment
       :desc "Update PR description" "o R" #'claude-repl-update-pr
-      :desc "Fresh branch" "o b" #'claude-repl-fresh-branch)
+      :desc "Fresh branch" "o b" #'claude-repl-fresh-branch
+      :desc "Merge master" "o m" #'claude-repl-merge-master
+      :desc "Rebase upstream" "o u" #'claude-repl-rebase-upstream)
 
 (map! :leader
       (:prefix "p"
