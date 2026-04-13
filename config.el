@@ -871,6 +871,8 @@ If found, the class name is returned, otherwise STR is returned"
               :action (lambda (c) (switch-to-buffer (if (consp c) (cdr c) c)))
               :caller '+dwc/switch-to-project-buffer)))
 
+
+
 (map! :leader
       (:prefix "p"
        :desc "Switch to project" "p" #'+dwc/switch-to-project
@@ -1073,6 +1075,5 @@ If found, the class name is returned, otherwise STR is returned"
 (setq claude-repl--notify-fn #'ignore)
 
 (map! :leader
-      :prefix "TAB"
-      "<" #'+workspace/swap-left
-      ">" #'+workspace/swap-right)
+      "TAB <" #'+workspace/swap-left
+      "TAB >" #'+workspace/swap-right)
