@@ -420,7 +420,7 @@
 ;; Workspace configuration
 (after! persp-mode
   ;; Auto-restore workspaces from last session on startup
-  (setq persp-auto-resume-time 0.1)
+  (setq persp-auto-resume-time 1.0)
   ;; Never ask for confirmation when killing a buffer not in the current workspace
   (setq persp-kill-foreign-buffer-behaviour 'kill)
 
