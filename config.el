@@ -388,9 +388,12 @@
   (advice-add '+ivy/project-compile :after #'DWC--add-command-to-projectile-history))
 
 ;; Skip find-file prompt when switching to a project that already has an open workspace
+(defvar +dwc/restoring-session nil
+  "Non-nil while restoring a saved persp session; suppresses magit auto-open.")
+
 (setq +workspaces-switch-project-function
       (lambda (dir)
-        (unless (doom-real-buffer-list)
+        (unless (or +dwc/restoring-session (doom-real-buffer-list))
           (magit-status dir))))
 
 (after! magit
@@ -419,8 +422,19 @@
 
 ;; Workspace configuration
 (after! persp-mode
-  ;; Auto-restore workspaces from last session on startup
-  (setq persp-auto-resume-time 1.0)
+  ;; Disable persp auto-resume; we restore manually after killing Doom's
+  ;; default "main" workspace to prevent a name collision that drops one
+  ;; saved workspace (persp-add-new returns the existing persp when a name
+  ;; already exists, so the saved state merges into Doom's empty "main").
+  (setq persp-auto-resume-time -1)
+  (run-with-idle-timer 1.0 nil
+    (lambda ()
+      (let ((save-file (expand-file-name persp-auto-save-fname persp-save-dir)))
+        (when (file-exists-p save-file)
+          (when (+workspace-exists-p "main")
+            (+workspace/delete "main"))
+          (let ((+dwc/restoring-session t))
+            (persp-load-state-from-file save-file))))))
   ;; Never ask for confirmation when killing a buffer not in the current workspace
   (setq persp-kill-foreign-buffer-behaviour 'kill)
 
@@ -484,18 +498,7 @@ Focus remains on the current workspace."
       (+dwc/refresh-tab-bar)
       (+workspace/switch-to current)
       (message "Pulled '%s' to second position." current)))
-  (run-with-timer 1 1 #'+dwc/refresh-tab-bar)
-
-  ;; Delete the "main" workspace after session restore.
-  (add-hook 'persp-after-load-state-functions
-            (lambda (&rest _)
-              (let ((names (+workspace-list-names)))
-                (when (member "main" names)
-                  (condition-case err
-                      (progn
-                        (persp-kill "main")
-                        (message "Deleted 'main' workspace."))
-                    (error (message "Failed to delete 'main' workspace: %s" err))))))))
+  (run-with-timer 1 1 #'+dwc/refresh-tab-bar))
 
 ;; Cmd+<numeral> workspace switching in insert mode
 ;; Doom binds s-1..s-9 with :n (normal only) on macOS. Add insert state.
