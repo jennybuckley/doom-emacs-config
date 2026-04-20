@@ -1183,6 +1183,10 @@ Handles input preparation, sending, history, and persistence."
            (raw (or prompt
                     (when input-buf
                       (with-current-buffer input-buf (buffer-string))))))
+      (unless (and raw vterm-buf (buffer-live-p vterm-buf))
+        (message "claude-repl-send: blocked — ws=%s raw=%s vterm-buf=%s live=%s"
+                 ws (if raw "yes" "nil") vterm-buf
+                 (and vterm-buf (buffer-live-p vterm-buf))))
       (when (and raw vterm-buf (buffer-live-p vterm-buf))
         (let ((input (claude-repl--prepare-input ws raw force-metaprompt)))
           (claude-repl--do-send ws input raw)
@@ -1767,7 +1771,7 @@ Starts `git diff --quiet' in WS's directory.  On exit, sets `:git-clean'
 to `clean' or `dirty' in the workspace plist and calls
 `claude-repl--update-ws-state' to apply any resulting state transition.
 A no-op if a check is already in progress for WS."
-  (when-let ((dir (claude-repl--ws-dir ws)))
+  (when-let ((dir (claude-repl--ws-get ws :project-dir)))
     (unless (let ((proc (claude-repl--ws-get ws :git-proc)))
               (and proc (process-live-p proc)))
       (let* ((default-directory dir)
@@ -1920,8 +1924,9 @@ Runs silently every 5 minutes to prevent data loss."
   "Replace the loading placeholder window with the real vterm buffer.
 Called once when Claude sets its first terminal title (meaning it's ready)."
   (claude-repl--log "swap-placeholder buf=%s" (buffer-name))
-  (let ((buf (current-buffer))
-        (placeholder (get-buffer " *claude-loading*")))
+  (let* ((buf (current-buffer))
+         (ws claude-repl--owning-workspace)
+         (placeholder (when ws (claude-repl--ws-get ws :loading-placeholder))))
     (when placeholder
       (run-at-time 0 nil
                    (lambda ()
@@ -1930,7 +1935,9 @@ Called once when Claude sets its first terminal title (meaning it's ready)."
                          (set-window-dedicated-p win nil)
                          (set-window-buffer win buf)
                          (set-window-dedicated-p win t))
-                       (kill-buffer placeholder)))))))
+                       (kill-buffer placeholder)
+                       (when ws
+                         (claude-repl--ws-put ws :loading-placeholder nil))))))))
 
 (defun claude-repl--maybe-notify-finished (ws)
   "Send a desktop notification that Claude finished in WS, if frame is unfocused.
@@ -2028,14 +2035,14 @@ prompts (with a 0.3s delay), and auto-opens panels if appropriate."
             ;; handles the visual transition and calling claude-repl here would
             ;; trigger --show-existing-panels with the wrong selected window.
             (if (string= ws (+workspace-current-name))
-                (unless (when-let ((ph (get-buffer " *claude-loading*")))
+                (unless (when-let ((ph (claude-repl--ws-get ws :loading-placeholder)))
                           (get-buffer-window ph))
                   (claude-repl))
               (claude-repl--ws-put ws :pending-show-panels t)))
         (progn
           (claude-repl--log "first-ready no pending prompts for ws=%s" ws)
           (when (and (string= ws (+workspace-current-name))
-                     (not (when-let ((ph (get-buffer " *claude-loading*")))
+                     (not (when-let ((ph (claude-repl--ws-get ws :loading-placeholder)))
                             (get-buffer-window ph))))
             (claude-repl)))))))
 
@@ -2485,7 +2492,11 @@ Gives up after 30s. This is a fallback — the title-change path is the happy pa
        (not (one-window-p))
        (not (get-buffer-window
              (format "*claude-%s*" (match-string 1 name))))
-       (not (get-buffer " *claude-loading*"))))
+       (let* ((vterm-buf (get-buffer (format "*claude-%s*" (match-string 1 name))))
+              (ws (when vterm-buf
+                    (buffer-local-value 'claude-repl--owning-workspace vterm-buf)))
+              (placeholder (when ws (claude-repl--ws-get ws :loading-placeholder))))
+         (not (and placeholder (buffer-live-p placeholder))))))
 
 (defun claude-repl--sync-panels ()
   "Close any Claude panel whose partner is no longer visible."
@@ -2618,10 +2629,11 @@ The placeholder is swapped for the real vterm buffer once Claude is ready."
   (claude-repl--log "show-panels-with-placeholder")
   (let* ((ws (+workspace-current-name))
          (real-vterm (claude-repl--ws-get ws :vterm-buffer))
-         (placeholder (get-buffer-create " *claude-loading*")))
+         (placeholder (get-buffer-create (format " *claude-loading-%s*" ws))))
     (with-current-buffer placeholder
       (setq-local mode-line-format nil)
       (claude-repl--set-buffer-background 15))
+    (claude-repl--ws-put ws :loading-placeholder placeholder)
     (claude-repl--ws-put ws :vterm-buffer placeholder)
     (claude-repl--show-panels)
     (claude-repl--focus-input-panel)
@@ -2635,14 +2647,23 @@ The placeholder is swapped for the real vterm buffer once Claude is ready."
     (claude-repl--touch-activity ws))
   (delete-other-windows)
   (claude-repl--ensure-session)
-  (claude-repl--show-panels-with-placeholder)
+  ;; If the vterm was reused from another workspace (same git root, already
+  ;; running), skip the placeholder — handle-first-ready will never fire since
+  ;; claude-repl--ready is already t, so the placeholder would never be swapped.
   (let* ((ws (+workspace-current-name))
-         (start-cmd (claude-repl-instantiation-start-cmd (claude-repl--active-inst ws))))
-    (message "Starting Claude... ws=%s ws-id=%s dir=%s cmd=%s"
-             ws
-             (claude-repl--workspace-id)
-             (claude-repl--resolve-root)
-             (or start-cmd "?"))))
+         (vterm-buf (claude-repl--ws-get ws :vterm-buffer))
+         (already-ready (and vterm-buf
+                             (buffer-live-p vterm-buf)
+                             (buffer-local-value 'claude-repl--ready vterm-buf))))
+    (if already-ready
+        (claude-repl--show-existing-panels)
+      (claude-repl--show-panels-with-placeholder)
+      (let ((start-cmd (claude-repl-instantiation-start-cmd (claude-repl--active-inst ws))))
+        (message "Starting Claude... ws=%s ws-id=%s dir=%s cmd=%s"
+                 ws
+                 (claude-repl--workspace-id)
+                 (claude-repl--resolve-root)
+                 (or start-cmd "?"))))))
 
 (defun claude-repl--show-existing-panels ()
   "Show panels for an already-running Claude session.
@@ -2712,13 +2733,16 @@ If panels hidden: show both panels."
       (when-let ((win (get-buffer-window buf)))
         (ignore-errors (delete-window win))))))
 
-(defun claude-repl--kill-placeholder ()
-  "Close and kill the loading placeholder buffer if it exists."
-  (claude-repl--log "kill-placeholder exists=%s" (if (get-buffer " *claude-loading*") "yes" "no"))
-  (when-let ((placeholder (get-buffer " *claude-loading*")))
-    (when-let ((win (get-buffer-window placeholder)))
-      (ignore-errors (delete-window win)))
-    (kill-buffer placeholder)))
+(defun claude-repl--kill-placeholder (&optional ws)
+  "Close and kill the loading placeholder buffer for WS if it exists."
+  (let ((placeholder (when ws (claude-repl--ws-get ws :loading-placeholder))))
+    (claude-repl--log "kill-placeholder ws=%s exists=%s" ws
+                      (if (and placeholder (buffer-live-p placeholder)) "yes" "no"))
+    (when (and placeholder (buffer-live-p placeholder))
+      (when-let ((win (get-buffer-window placeholder)))
+        (ignore-errors (delete-window win)))
+      (kill-buffer placeholder)
+      (claude-repl--ws-put ws :loading-placeholder nil))))
 
 (defun claude-repl--schedule-sigkill (proc)
   "Schedule a SIGKILL for PROC after 0.5s if it's still alive."
@@ -2762,7 +2786,9 @@ If panels hidden: show both panels."
   "Close windows and kill VTERM-BUF, INPUT-BUF, and any placeholder."
   (claude-repl--log "destroy-session-buffers")
   (claude-repl--close-buffer-windows vterm-buf input-buf)
-  (claude-repl--kill-placeholder)
+  (claude-repl--kill-placeholder
+   (when (and vterm-buf (buffer-live-p vterm-buf))
+     (buffer-local-value 'claude-repl--owning-workspace vterm-buf)))
   (claude-repl--kill-vterm-process vterm-buf)
   (when (and input-buf (buffer-live-p input-buf))
     (kill-buffer input-buf)))
