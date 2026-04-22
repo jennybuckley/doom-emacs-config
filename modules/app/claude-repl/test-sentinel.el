@@ -159,7 +159,9 @@ re-dispatched by the poll fallback observing a still-present file."
         (should (< delete-time callback-time))))))
 
 (ert-deftest claude-repl-test-process-sentinel-file-nil-read-skips-all ()
-  "When read-sentinel-file returns nil, callback should not be called."
+  "When read-sentinel-file returns nil, callback is not called and file is left in place.
+The file must NOT be deleted so the subsequent `changed' event (fired after the hook
+finishes writing content) can re-read it with full content."
   (claude-repl-test--with-clean-state
     (let ((callback-called nil)
           (deleted-file nil))
@@ -175,8 +177,7 @@ re-dispatched by the poll fallback observing a still-present file."
            :warning "warn %s"
            :name "test"))
         (should-not callback-called)
-        ;; File should still be deleted even when dir is nil
-        (should (equal deleted-file "/tmp/stop_456"))))))
+        (should-not deleted-file)))))
 
 (ert-deftest claude-repl-test-process-sentinel-file-nil-ws-warns ()
   "When ws-for-dir returns nil, the warning should be logged and callback skipped."
@@ -202,8 +203,8 @@ re-dispatched by the poll fallback observing a still-present file."
         (should (string-match-p "/unknown/dir" warning-msg))
         (should (equal deleted-file "/tmp/stop_789"))))))
 
-(ert-deftest claude-repl-test-process-sentinel-file-always-deletes ()
-  "File should be deleted even when callback signals an error."
+(ert-deftest claude-repl-test-process-sentinel-file-deletes-on-success ()
+  "File should be deleted when read succeeds (even if the callback does nothing special)."
   (claude-repl-test--with-clean-state
     (let ((deleted-file nil))
       (cl-letf (((symbol-function 'claude-repl--read-sentinel-file)

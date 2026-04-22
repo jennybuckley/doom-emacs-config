@@ -65,7 +65,10 @@ all others use `claude-repl-personal-permission-flag'."
 
 (defun claude-repl--docker-image-exists-p (image)
   "Return non-nil if IMAGE exists in the local Docker image store."
-  (let ((result (= 0 (call-process "docker" nil nil nil "image" "inspect" "--format" "." image))))
+  (let* ((output (with-temp-buffer
+                   (call-process "docker" nil t nil "images" "-q" image)
+                   (string-trim (buffer-string))))
+         (result (not (string-empty-p output))))
     (claude-repl--log nil "docker-image-exists-p: image=%s exists=%s" image (if result "yes" "no"))
     result))
 

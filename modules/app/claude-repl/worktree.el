@@ -35,6 +35,14 @@ do not abort workspace creation."
   :type 'string
   :group 'claude-repl)
 
+(defcustom claude-repl-worktree-branch-prefix nil
+  "Prefix prepended to branch names when creating worktrees, or nil for none.
+Only affects the git branch name — the workspace name and directory are
+unchanged.  For example, with prefix \"JB/\" and workspace name \"my-feature\",
+the git branch will be \"JB/my-feature\" but the workspace stays \"my-feature\"."
+  :type '(choice (const :tag "None" nil) string)
+  :group 'claude-repl)
+
 (defcustom claude-repl-worktree-default-base "origin/master"
   "Default git ref for new worktree branches when no fork source is active."
   :type 'string
@@ -210,6 +218,10 @@ Returns a plist with keys :git-root, :dirname, :branch-name,
 :worktree-parent, :path, and :in-worktree."
   (let* ((git-root (claude-repl--path-canonical git-root))
          (dirname (claude-repl--bare-workspace-name name))
+         (branch-name (if (and claude-repl-worktree-branch-prefix
+                               (not (string-prefix-p claude-repl-worktree-branch-prefix name)))
+                          (concat claude-repl-worktree-branch-prefix name)
+                        name))
          (git-root-parent (file-name-directory git-root))
          (in-worktree (file-regular-p (expand-file-name ".git" git-root)))
          (worktree-parent (if in-worktree
@@ -220,10 +232,10 @@ Returns a plist with keys :git-root, :dirname, :branch-name,
                               wt-dir)))
          (path (claude-repl--path-canonical (expand-file-name dirname worktree-parent))))
     (claude-repl--log name "resolve-worktree-paths: git-root=%s dirname=%s branch-name=%s worktree-parent=%s path=%s in-worktree=%s"
-                      git-root dirname name worktree-parent path in-worktree)
+                      git-root dirname branch-name worktree-parent path in-worktree)
     (list :git-root git-root
           :dirname dirname
-          :branch-name name
+          :branch-name branch-name
           :worktree-parent worktree-parent
           :path path
           :in-worktree in-worktree)))
@@ -331,7 +343,9 @@ error messages.  Signals `user-error' on any failure."
   (when (string-empty-p name)
     (user-error "Name cannot be empty"))
   (when (projectile-project-p path)
-    (user-error "Worktree '%s' already exists — use SPC p p to switch to it" dirname))
+    (let ((root (ignore-errors (projectile-project-root path))))
+      (claude-repl--log name "validate-worktree-creation: path=%s already a project at root=%s" path root)
+      (user-error "Worktree '%s' already exists — use SPC p p to switch to it" dirname)))
   (when (claude-repl--git-branch-exists-p git-root branch-name)
     (claude-repl--log name "ERROR: branch '%s' already exists — cannot create worktree" branch-name)
     (user-error "Branch '%s' already exists — delete it first or choose a different name" branch-name)))

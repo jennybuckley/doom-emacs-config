@@ -376,11 +376,8 @@
 
   (advice-add '+ivy/project-compile :after #'DWC--add-command-to-projectile-history))
 
-;; Skip find-file prompt when switching to a project that already has an open workspace
-(setq +workspaces-switch-project-function
-      (lambda (dir)
-        (unless (doom-real-buffer-list)
-          (magit-status dir))))
+;; Don't auto-open anything when switching to a project; let persp restore the saved layout
+(setq +workspaces-switch-project-function #'ignore)
 
 ;; All magit integration and user magit commands live in the claude-repl
 ;; module's magit.el (see AGENTS.md — no claude-repl code in this file).
@@ -391,6 +388,12 @@
   (setq persp-auto-save-opt 1)
   ;; Auto-restore workspaces from last session on startup
   (setq persp-auto-resume-time 0.1)
+  ;; Don't reopen magit on startup — prepend a 'skip before Doom's magit save
+  ;; handler so magit buffers are never written to the session file.
+  (add-to-list 'persp-save-buffer-functions
+               (lambda (b)
+                 (when (with-current-buffer b (derived-mode-p 'magit-mode))
+                   'skip)))
   ;; Never ask for confirmation when killing a buffer not in the current workspace
   (setq persp-kill-foreign-buffer-behaviour 'kill)
 
@@ -1028,4 +1031,5 @@ If found, the class name is returned, otherwise STR is returned"
 ;; Per-repo initial buffers for new worktree workspaces.
 (after! claude-repl
   (add-to-list 'claude-repl-workspace-initial-buffers
-               '("open-claude-config" . ("modules/app/claude-repl/config.el"))))
+               '("open-claude-config" . ("modules/app/claude-repl/config.el")))
+  (setq claude-repl-worktree-branch-prefix "JB/"))

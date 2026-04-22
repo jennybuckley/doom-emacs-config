@@ -207,11 +207,14 @@ Works from any buffer or from within the vterm buffer itself."
 
 (defun claude-repl--drain-pending-show-panels (ws)
   "Open panels for WS if a preemptive prompt queued a :pending-show-panels flag.
-Clears the flag and calls `claude-repl' to display the panels."
+When Claude is still starting, keeps the flag so the next navigation retries.
+Clears the flag via `claude-repl--show-existing-panels' when panels actually open."
   (if (claude-repl--ws-get ws :pending-show-panels)
-      (progn
+      (if (claude-repl--session-starting-p ws)
+          (progn
+            (claude-repl--log ws "drain-pending-show-panels: ws=%s session starting, keeping pshow" ws)
+            (message "Claude is loading…"))
         (claude-repl--log ws "drain-pending-show-panels: ws=%s branch=had-pending draining" ws)
-        (claude-repl--ws-put ws :pending-show-panels nil)
         (claude-repl))
     (claude-repl--log-verbose ws "drain-pending-show-panels: ws=%s branch=no-pending no-op" ws)))
 
@@ -571,10 +574,12 @@ echo-area message below."
   "Show panels for an already-running Claude session.
 Demotes indicators, refreshes display, and restores panel layout.
 Sets `:repl-state :active' now that panels are visible and the
-session is in use."
+session is in use.  Clears :pending-show-panels so that returning
+to this workspace after panels are open does not re-trigger the show."
   (let ((ws (+workspace-current-name)))
     (claude-repl--log ws "show-existing-panels")
     (unless ws (error "claude-repl--show-existing-panels: no active workspace"))
+    (claude-repl--ws-put ws :pending-show-panels nil)
     (claude-repl--ws-set-repl-state ws :active)
     (claude-repl--refresh-vterm)
     (delete-other-windows)

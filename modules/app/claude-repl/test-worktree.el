@@ -827,6 +827,38 @@ Returns the full SHA of the new commit."
                            (claude-repl--path-canonical fake-root)))))
       (delete-directory tmpdir t))))
 
+(ert-deftest claude-repl-test-resolve-worktree-paths-branch-prefix ()
+  "When claude-repl-worktree-branch-prefix is set, it is prepended to the branch name only."
+  (let ((tmpdir (claude-repl--path-canonical
+                 (make-temp-file "resolve-wt-test-" t))))
+    (unwind-protect
+        (let* ((fake-root (expand-file-name "my-repo" tmpdir))
+               (claude-repl-worktree-branch-prefix "JB/"))
+          (make-directory fake-root t)
+          (make-directory (expand-file-name ".git" fake-root) t)
+          (let ((result (claude-repl--resolve-worktree-paths
+                         (file-name-as-directory fake-root)
+                         "my-feature")))
+            (should (equal (plist-get result :branch-name) "JB/my-feature"))
+            (should (equal (plist-get result :dirname) "my-feature"))))
+      (delete-directory tmpdir t))))
+
+(ert-deftest claude-repl-test-resolve-worktree-paths-branch-prefix-no-double ()
+  "When the name already starts with the prefix, it is not prepended again."
+  (let ((tmpdir (claude-repl--path-canonical
+                 (make-temp-file "resolve-wt-test-" t))))
+    (unwind-protect
+        (let* ((fake-root (expand-file-name "my-repo" tmpdir))
+               (claude-repl-worktree-branch-prefix "JB/"))
+          (make-directory fake-root t)
+          (make-directory (expand-file-name ".git" fake-root) t)
+          (let ((result (claude-repl--resolve-worktree-paths
+                         (file-name-as-directory fake-root)
+                         "JB/my-feature")))
+            (should (equal (plist-get result :branch-name) "JB/my-feature"))
+            (should (equal (plist-get result :dirname) "my-feature"))))
+      (delete-directory tmpdir t))))
+
 ;;;; ---- Tests: workspace-branch ----
 
 (ert-deftest claude-repl-test-workspace-branch-no-project-dir ()

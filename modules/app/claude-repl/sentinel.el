@@ -198,13 +198,18 @@ name and the directory."
          (dir (plist-get sentinel-data :dir))
          (session-id (plist-get sentinel-data :session-id))
          (ws  (when dir (claude-repl--ws-for-dir dir))))
-    ;; Delete the file immediately after reading so the poll fallback can't
-    ;; re-dispatch it while a slow handler (e.g. panel setup) is still running.
-    (condition-case err
-        (delete-file file)
-      (error
-       (message "[claude-repl] WARNING: could not delete sentinel file %s: %S"
-                (file-name-nondirectory file) err)))
+    ;; Only delete the file when the read succeeded.  Shell hooks use `>'
+    ;; redirection which creates the file empty before writing content, so a
+    ;; `created' event can fire while the file is still 0 bytes.  Deleting on
+    ;; that first empty read would unlink the inode; the hook's subsequent
+    ;; write goes to the now-unlinked inode and no `changed' event fires.
+    ;; Leaving the file in place lets the `changed' event re-read full content.
+    (when dir
+      (condition-case err
+          (delete-file file)
+        (error
+         (message "[claude-repl] WARNING: could not delete sentinel file %s: %S"
+                  (file-name-nondirectory file) err))))
     (claude-repl--log ws "process-sentinel-file: handler=%s file=%s dir=%S session-id=%S ws=%s"
                       (plist-get handler :name) (file-name-nondirectory file) dir session-id ws)
     (cond

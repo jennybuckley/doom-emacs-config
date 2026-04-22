@@ -173,14 +173,27 @@
 ;;;; ---- Tests: drain-pending-show-panels ----
 
 (ert-deftest claude-repl-test-panels-drain-pending-when-set ()
-  "drain-pending-show-panels calls claude-repl and clears the flag."
+  "drain-pending-show-panels calls claude-repl when Claude is ready (pshow cleared by show-existing-panels, not here)."
   (claude-repl-test--with-clean-state
     (claude-repl--ws-put "test-ws" :pending-show-panels t)
     (let ((called nil))
-      (cl-letf (((symbol-function 'claude-repl) (lambda () (setq called t))))
+      (cl-letf (((symbol-function 'claude-repl) (lambda () (setq called t)))
+                ((symbol-function 'claude-repl--session-starting-p) (lambda (&optional _ws) nil)))
         (claude-repl--drain-pending-show-panels "test-ws")
         (should called)
-        (should-not (claude-repl--ws-get "test-ws" :pending-show-panels))))))
+        ;; pshow is NOT cleared by drain — show-existing-panels clears it
+        (should (claude-repl--ws-get "test-ws" :pending-show-panels))))))
+
+(ert-deftest claude-repl-test-panels-drain-pending-when-session-starting ()
+  "drain-pending-show-panels keeps pshow and shows loading message when Claude is still starting."
+  (claude-repl-test--with-clean-state
+    (claude-repl--ws-put "test-ws" :pending-show-panels t)
+    (let ((called nil))
+      (cl-letf (((symbol-function 'claude-repl) (lambda () (setq called t)))
+                ((symbol-function 'claude-repl--session-starting-p) (lambda (&optional _ws) t)))
+        (claude-repl--drain-pending-show-panels "test-ws")
+        (should-not called)
+        (should (claude-repl--ws-get "test-ws" :pending-show-panels))))))
 
 (ert-deftest claude-repl-test-panels-drain-pending-when-not-set ()
   "drain-pending-show-panels does nothing when flag is nil."
@@ -395,6 +408,18 @@ Does NOT set `no-other-window' — keyboard isolation now comes from
               ((symbol-function 'claude-repl--update-hide-overlay) #'ignore))
       (claude-repl--show-existing-panels)
       (should (eq (claude-repl--ws-get "test-ws" :repl-state) :active)))))
+
+(ert-deftest claude-repl-test-panels-show-existing-clears-pending-show ()
+  "show-existing-panels clears :pending-show-panels so returning to workspace doesn't re-trigger show."
+  (claude-repl-test--with-clean-state
+    (claude-repl--ws-put "test-ws" :pending-show-panels t)
+    (cl-letf (((symbol-function '+workspace-current-name) (lambda () "test-ws"))
+              ((symbol-function 'claude-repl--refresh-vterm) #'ignore)
+              ((symbol-function 'delete-other-windows) #'ignore)
+              ((symbol-function 'claude-repl--show-panels-and-focus) #'ignore)
+              ((symbol-function 'claude-repl--update-hide-overlay) #'ignore))
+      (claude-repl--show-existing-panels)
+      (should-not (claude-repl--ws-get "test-ws" :pending-show-panels)))))
 
 ;;;; ---- Tests: deferred macro ----
 
