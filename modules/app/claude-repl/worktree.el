@@ -430,9 +430,10 @@ If called from a worktree, the new worktree is created as a sibling (../<dirname
 If called from a normal repo, it is created under ../<repo-name>-worktrees/<dirname>.
 
 Without a prefix argument, the new branch is created off the current
-worktree's HEAD — so edits in-flight here naturally carry over.  With
-\\[universal-argument], the new branch is created off `origin/master'
-instead (and `origin/master' is fetched first).
+worktree's HEAD in sandbox mode.  With \\[universal-argument], force
+bare-metal mode (skip Docker sandbox) and branch off HEAD.  With
+\\[universal-argument] \\[universal-argument], branch off `origin/master'
+instead (fetches first) in sandbox mode.
 
 Optionally prompts for a preemptive prompt.  If provided, the new workspace is
 created in the background (no switch) and the prompt is sent to Claude the moment
@@ -441,16 +442,18 @@ to the new workspace immediately.
 
 Git operations (fetch, worktree add) run asynchronously so Emacs is not blocked."
   (interactive "P")
-  (let* ((base-commit (if arg "origin/master" "HEAD"))
+  (let* ((n (prefix-numeric-value (or arg 1)))
+         (force-bare-metal (= n 4))
+         (base-commit (if (>= n 16) "origin/master" "HEAD"))
          (name (read-string "Worktree name: "))
          (raw-prompt (read-string "Preemptive prompt (blank to switch there normally): "))
          (has-preemptive (and raw-prompt (not (string-empty-p raw-prompt))))
          (preemptive-prompt (when has-preemptive
                               (concat claude-repl--autonomous-prompt-prefix raw-prompt))))
-    (claude-repl--log name "create-worktree-workspace: name=%s base-commit=%s has-preemptive=%s"
-                      name base-commit has-preemptive)
+    (claude-repl--log name "create-worktree-workspace: name=%s base-commit=%s force-bare-metal=%s has-preemptive=%s"
+                      name base-commit force-bare-metal has-preemptive)
     (claude-repl--do-create-worktree-workspace
-     name nil nil preemptive-prompt
+     name force-bare-metal nil preemptive-prompt
      (unless has-preemptive #'claude-repl--worktree-creation-switch-callback)
      nil base-commit)))
 

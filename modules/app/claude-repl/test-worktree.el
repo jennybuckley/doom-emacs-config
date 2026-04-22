@@ -1299,17 +1299,34 @@ Returns the full SHA of the new commit."
         (claude-repl-create-worktree-workspace nil)
         (should (equal captured-base "HEAD"))))))
 
-(ert-deftest claude-repl-test-create-worktree-workspace-c-u-base-is-origin-master ()
-  "`C-u SPC TAB n' branches off origin/master."
+(ert-deftest claude-repl-test-create-worktree-workspace-c-u-forces-bare-metal ()
+  "`C-u SPC TAB n' forces bare-metal and branches off HEAD."
   (claude-repl-test--with-clean-state
-    (let ((captured-base nil))
+    (let ((captured-bare nil)
+          (captured-base nil))
       (cl-letf (((symbol-function 'read-string)
                  (lambda (prompt &rest _)
                    (if (string-match-p "name" prompt) "my-ws" "")))
                 ((symbol-function 'claude-repl--do-create-worktree-workspace)
-                 (lambda (_name _bare _fork _prompt _cb _priority base)
-                   (setq captured-base base))))
+                 (lambda (_name bare _fork _prompt _cb _priority base)
+                   (setq captured-bare bare captured-base base))))
         (claude-repl-create-worktree-workspace '(4))
+        (should (eq captured-bare t))
+        (should (equal captured-base "HEAD"))))))
+
+(ert-deftest claude-repl-test-create-worktree-workspace-c-u-c-u-base-is-origin-master ()
+  "`C-u C-u SPC TAB n' branches off origin/master in sandbox mode."
+  (claude-repl-test--with-clean-state
+    (let ((captured-bare nil)
+          (captured-base nil))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (prompt &rest _)
+                   (if (string-match-p "name" prompt) "my-ws" "")))
+                ((symbol-function 'claude-repl--do-create-worktree-workspace)
+                 (lambda (_name bare _fork _prompt _cb _priority base)
+                   (setq captured-bare bare captured-base base))))
+        (claude-repl-create-worktree-workspace '(16))
+        (should (null captured-bare))
         (should (equal captured-base "origin/master"))))))
 
 (ert-deftest claude-repl-test-create-worktree-workspace-prefixes-preemptive-prompt ()

@@ -438,3 +438,4 @@ Useful to verify the init-time reap logic works without restarting Emacs."
                              #'claude-repl--dispatch-sentinel-event))
 (claude-repl--log nil "sentinel-init: registered watcher descriptor=%S"
                   claude-repl--sentinel-watch-descriptor)
+(claude-repl--poll-workspace-notifications)

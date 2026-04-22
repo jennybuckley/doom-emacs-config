@@ -559,6 +559,36 @@ workspace can be determined."
           (claude-repl--ws-put ws :ready-timer nil))
       (claude-repl--log ws "cancel-ready-timer: no timer to cancel for ws=%s" ws))))
 
+(defun claude-repl--force-ready (ws)
+  "Force workspace WS to ready state without waiting for session_start.
+Sets claude-repl--ready in the vterm buffer, transitions claude-state to
+:idle, and opens panels.  Used as a recovery path when the ready timer
+times out — Claude is probably alive but stuck at an interactive prompt
+(e.g. a login or update screen) that the user needs to see and interact
+with."
+  (let ((vterm-buf (claude-repl--ws-get ws :vterm-buffer)))
+    (claude-repl--log ws "force-ready: forcing ws=%s ready (timer timeout recovery)" ws)
+    (when (and vterm-buf (buffer-live-p vterm-buf))
+      (with-current-buffer vterm-buf
+        (setq claude-repl--ready t)))
+    (claude-repl--ws-set-claude-state ws :idle)
+    (claude-repl--open-panels-after-ready ws)))
+
+(defun claude-repl-force-ready ()
+  "Force the current workspace's Claude session to ready state.
+Use this to recover when 'Claude is loading…' is stuck — it opens the
+panels so you can see and interact with the vterm directly."
+  (interactive)
+  (let ((ws (+workspace-current-name)))
+    (if (claude-repl--session-starting-p ws)
+        (claude-repl--force-ready ws)
+      (message "[claude-repl] ws=%s is not in starting state (ready=%s alive=%s)"
+               ws
+               (if (claude-repl--ws-get ws :vterm-buffer)
+                   (buffer-local-value 'claude-repl--ready (claude-repl--ws-get ws :vterm-buffer))
+                 "no-buf")
+               (if (claude-repl--vterm-process-alive-p ws) "yes" "no")))))
+
 (defun claude-repl--ready-timer-tick (ws start-time)
   "Handle one tick of the readiness-poll timer for workspace WS.
 START-TIME is the `float-time' when polling began.  Cancels the timer and
@@ -568,7 +598,11 @@ gives up after 30 seconds, or cancels and opens panels once Claude is ready."
     (cond
      ((> elapsed claude-repl-ready-timeout-seconds)
       (claude-repl--cancel-ready-timer ws)
-      (claude-repl--log ws "ready-timer: timed out for ws=%s" ws))
+      (claude-repl--log ws "ready-timer: timed out for ws=%s — force-ready to unblock panels" ws)
+      ;; session_start never arrived; force-ready so the vterm becomes visible
+      ;; and the user can interact with whatever Claude is showing.
+      (when (claude-repl--vterm-process-alive-p ws)
+        (claude-repl--force-ready ws)))
      ((claude-repl--session-starting-p ws) nil)
      (t
       (claude-repl--cancel-ready-timer ws)

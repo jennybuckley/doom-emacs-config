@@ -614,14 +614,57 @@ against stop events arriving after kill."
       (claude-repl--cancel-ready-timer "ws1")
       (should-not (claude-repl--ws-get "ws1" :ready-timer)))))
 
-(ert-deftest claude-repl-test-ready-timer-tick-timeout ()
+(ert-deftest claude-repl-test-ready-timer-tick-timeout-cancels ()
   "ready-timer-tick should cancel timer after 30s timeout."
   (claude-repl-test--with-clean-state
     (let ((cancelled nil))
       (cl-letf (((symbol-function 'claude-repl--cancel-ready-timer)
-                 (lambda (_ws) (setq cancelled t))))
+                 (lambda (_ws) (setq cancelled t)))
+                ((symbol-function 'claude-repl--vterm-process-alive-p) (lambda (_ws) nil)))
         (claude-repl--ready-timer-tick "ws1" (- (float-time) 31.0))
         (should cancelled)))))
+
+(ert-deftest claude-repl-test-ready-timer-tick-timeout-force-ready-when-alive ()
+  "ready-timer-tick should call force-ready when vterm is alive at timeout."
+  (claude-repl-test--with-clean-state
+    (let ((forced nil))
+      (cl-letf (((symbol-function 'claude-repl--cancel-ready-timer) #'ignore)
+                ((symbol-function 'claude-repl--vterm-process-alive-p) (lambda (_ws) t))
+                ((symbol-function 'claude-repl--force-ready)
+                 (lambda (_ws) (setq forced t))))
+        (claude-repl--ready-timer-tick "ws1" (- (float-time) 31.0))
+        (should forced)))))
+
+(ert-deftest claude-repl-test-ready-timer-tick-timeout-no-force-ready-when-dead ()
+  "ready-timer-tick should not call force-ready when vterm is dead at timeout."
+  (claude-repl-test--with-clean-state
+    (let ((forced nil))
+      (cl-letf (((symbol-function 'claude-repl--cancel-ready-timer) #'ignore)
+                ((symbol-function 'claude-repl--vterm-process-alive-p) (lambda (_ws) nil))
+                ((symbol-function 'claude-repl--force-ready)
+                 (lambda (_ws) (setq forced t))))
+        (claude-repl--ready-timer-tick "ws1" (- (float-time) 31.0))
+        (should-not forced)))))
+
+(ert-deftest claude-repl-test-force-ready-sets-ready-and-opens-panels ()
+  "force-ready should set claude-repl--ready in vterm buf and open panels."
+  (claude-repl-test--with-clean-state
+    (let ((state-set nil)
+          (panels-opened nil))
+      (let ((vterm-buf (generate-new-buffer " *force-ready-test*")))
+        (unwind-protect
+            (cl-letf (((symbol-function 'claude-repl--ws-get)
+                       (lambda (_ws key)
+                         (when (eq key :vterm-buffer) vterm-buf)))
+                      ((symbol-function 'claude-repl--ws-set-claude-state)
+                       (lambda (_ws state) (setq state-set state)))
+                      ((symbol-function 'claude-repl--open-panels-after-ready)
+                       (lambda (_ws) (setq panels-opened t))))
+              (claude-repl--force-ready "ws1")
+              (should (buffer-local-value 'claude-repl--ready vterm-buf))
+              (should (eq state-set :idle))
+              (should panels-opened))
+          (kill-buffer vterm-buf))))))
 
 (ert-deftest claude-repl-test-ready-timer-tick-still-starting ()
   "ready-timer-tick should do nothing when session is still starting."
