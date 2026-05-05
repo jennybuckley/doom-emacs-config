@@ -150,6 +150,10 @@
 (unless (boundp '+doom-dashboard-buffer-name)
   (defvar +doom-dashboard-buffer-name "*doom*" "Stub."))
 
+;; projectile stubs
+(unless (boundp 'projectile-known-projects)
+  (defvar projectile-known-projects nil "Stub."))
+
 ;; filenotify stub (prevent side effects at load time)
 (require 'filenotify)
 (unless (fboundp 'file-notify-add-watch--orig)

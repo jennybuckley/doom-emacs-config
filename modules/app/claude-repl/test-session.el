@@ -770,8 +770,8 @@ where fresh-ws-env wrote :active-env without :project-dir."
             (should (eq (claude-repl--ws-get "ws1" :active-env) :sandbox)))
         (delete-directory tmpdir t)))))
 
-(ert-deftest claude-repl-test-initialize-ws-env-state-file-beats-hint ()
-  "State file value for :project-dir and :active-env overrides caller hints."
+(ert-deftest claude-repl-test-initialize-ws-env-hint-beats-state-file ()
+  "ACTIVE-ENV-HINT wins over saved state when provided; session-ids are still restored."
   (claude-repl-test--with-clean-state
     (let ((tmpdir (make-temp-file "test-init-override-" t)))
       (unwind-protect
@@ -784,10 +784,27 @@ where fresh-ws-env wrote :active-env without :project-dir."
                :bare-metal (:session-id "bm-saved")
                :sandbox (:session-id "sb-saved")))
             (claude-repl--initialize-ws-env "ws1" tmpdir :bare-metal)
-            (should (eq (claude-repl--ws-get "ws1" :active-env) :sandbox))
+            (should (eq (claude-repl--ws-get "ws1" :active-env) :bare-metal))
             (should (equal (claude-repl-instantiation-session-id
                             (claude-repl--ws-get "ws1" :bare-metal))
                            "bm-saved")))
+        (delete-directory tmpdir t)))))
+
+(ert-deftest claude-repl-test-initialize-ws-env-state-file-used-when-no-hint ()
+  "When no ACTIVE-ENV-HINT is given, saved :active-env is respected."
+  (claude-repl-test--with-clean-state
+    (let ((tmpdir (make-temp-file "test-init-no-hint-" t)))
+      (unwind-protect
+          (progn
+            (claude-repl--write-sexp-file
+             (expand-file-name ".claude-repl-state"
+                               (claude-repl--path-canonical tmpdir))
+             `(:project-dir ,(claude-repl--path-canonical tmpdir)
+               :active-env :sandbox
+               :bare-metal (:session-id "bm-saved")
+               :sandbox (:session-id "sb-saved")))
+            (claude-repl--initialize-ws-env "ws1" tmpdir nil)
+            (should (eq (claude-repl--ws-get "ws1" :active-env) :sandbox)))
         (delete-directory tmpdir t)))))
 
 ;;;; ---- Tests: prompt-sandbox-build ----

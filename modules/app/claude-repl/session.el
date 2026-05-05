@@ -153,11 +153,13 @@ The project root is resolved in this order:
      current buffer.
 
 The state file at that root (`.claude-repl-state') is loaded when
-present and its contents supersede the derived defaults (`:project-dir'
-from the file is canonical, and per-env instantiation structs are
-reconstructed from the saved plists).  When absent, fresh defaults are
-written (`:active-env' from ACTIVE-ENV-HINT or `:sandbox', empty
-instantiation structs) and an initial state file is persisted.
+present and its contents are used to restore per-env instantiation
+structs and (when no hint is given) the active environment.
+When ACTIVE-ENV-HINT is non-nil it always wins over the saved value —
+callers that explicitly choose an environment (worktree creation,
+environment switch) are authoritative.  When it is nil the saved
+`:active-env' is used, falling back to `:sandbox'.  When no state file
+exists, fresh defaults are written and persisted.
 
 Signals an error if `:project-dir' cannot be resolved from any of the
 three sources.  Idempotent: safe to call more than once for the same
@@ -191,8 +193,8 @@ state-save.  Callers already guard on `claude-repl--claude-running-p'."
                              (claude-repl--path-canonical (plist-get saved :project-dir))
                            root))
     (claude-repl--ws-put ws :active-env
-                         (or (and saved (plist-get saved :active-env))
-                             active-env-hint
+                         (or active-env-hint
+                             (and saved (plist-get saved :active-env))
                              :sandbox))
     (dolist (key claude-repl--environment-keys)
       (claude-repl--ws-put ws key

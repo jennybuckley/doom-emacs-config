@@ -251,8 +251,40 @@ value is stored via `claude-repl--ws-put'."
 (defun claude-repl--register-projectile-project (path dirname)
   "Write a .projectile marker and register PATH (named DIRNAME) with projectile."
   (write-region dirname nil (expand-file-name ".projectile" path))
-  (claude-repl--log dirname "worktree wrote .projectile, adding to projectile known projects")
+  (write-region "" nil (expand-file-name ".claude-repl-worktree" path))
+  (claude-repl--log dirname "worktree wrote .projectile and .claude-repl-worktree, adding to projectile known projects")
   (projectile-add-known-project (file-name-as-directory path)))
+
+(defun claude-repl--worktree-project-root ()
+  "Return :project-dir when the current workspace is a managed worktree.
+Returns nil when not in a worktree workspace, allowing callers to fall
+through to normal projectile detection.
+
+Fast path: uses in-memory workspace state (populated once a Claude session
+starts).  Fallback: scans `projectile-known-projects' for a project whose
+directory name matches the workspace name and has a `.claude-repl-worktree'
+marker — written at worktree creation time, so the advice works before any
+Claude session is started in the current Emacs session."
+  (when-let* ((ws (+workspace-current-name)))
+    (or (and (claude-repl--ws-get ws :worktree-p)
+             (claude-repl--ws-get ws :project-dir))
+        (and (boundp 'projectile-known-projects)
+             (cl-find-if
+              (lambda (proj)
+                (and (string= (file-name-nondirectory (directory-file-name proj)) ws)
+                     (file-exists-p (expand-file-name ".claude-repl-worktree" proj))))
+              projectile-known-projects)))))
+
+(defun claude-repl--projectile-root-advice (orig-fn &optional dir)
+  "Advise `projectile-project-root' to anchor to the worktree when no DIR given.
+Without this, SPC p f resolves the project root from the active buffer's
+`default-directory', which may point to the main repo (on master) rather
+than the worktree, causing files and the branch indicator to be wrong."
+  (or (and (not dir) (claude-repl--worktree-project-root))
+      (funcall orig-fn dir)))
+
+(with-eval-after-load 'projectile
+  (advice-add 'projectile-project-root :around #'claude-repl--projectile-root-advice))
 
 (defconst claude-repl--autonomous-prompt-prefix
   "Do not wait for further instructions. Come up with a plan and then immediately execute on it. Commit freely and often, but do not commit before corresponding tests (if any) have run. Never rebase, pull, merge, push, or run any other mutating git commands. Here is the task:\n\n"
@@ -359,7 +391,7 @@ BASE-COMMIT is the git ref the new branch is created from.  When nil,
 defaults to \"HEAD\" if FORK-SESSION-ID is set (forks track the live
 session's tip) and \"origin/master\" otherwise.  The interactive entry
 point passes \"HEAD\" explicitly so `SPC TAB n' always branches off the
-current worktree; `C-u SPC TAB n' passes \"origin/master\".
+current worktree; `C-u C-u SPC TAB n' passes \"origin/master\".
 
 The fetch step runs only when BASE-COMMIT has an \"origin/\" prefix
 \(i.e. the new branch needs an up-to-date remote ref).
@@ -430,10 +462,10 @@ If called from a worktree, the new worktree is created as a sibling (../<dirname
 If called from a normal repo, it is created under ../<repo-name>-worktrees/<dirname>.
 
 Without a prefix argument, the new branch is created off the current
-worktree's HEAD in sandbox mode.  With \\[universal-argument], force
-bare-metal mode (skip Docker sandbox) and branch off HEAD.  With
+worktree's HEAD in bare-metal mode.  With \\[universal-argument], force
+sandbox mode (Docker) and branch off HEAD.  With
 \\[universal-argument] \\[universal-argument], branch off `origin/master'
-instead (fetches first) in sandbox mode.
+instead (fetches first) in bare-metal mode.
 
 Optionally prompts for a preemptive prompt.  If provided, the new workspace is
 created in the background (no switch) and the prompt is sent to Claude the moment
@@ -443,7 +475,7 @@ to the new workspace immediately.
 Git operations (fetch, worktree add) run asynchronously so Emacs is not blocked."
   (interactive "P")
   (let* ((n (prefix-numeric-value (or arg 1)))
-         (force-bare-metal (= n 4))
+         (force-bare-metal (/= n 4))
          (base-commit (if (>= n 16) "origin/master" "HEAD"))
          (name (read-string "Worktree name: "))
          (raw-prompt (read-string "Preemptive prompt (blank to switch there normally): "))

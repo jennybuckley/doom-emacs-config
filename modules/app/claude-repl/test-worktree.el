@@ -131,6 +131,81 @@ Returns the full SHA of the new commit."
     (should-error (claude-repl--assert-clean-worktree "test-ws" repo)
                   :type 'user-error)))
 
+;;;; ---- Tests: worktree-project-root (projectile integration) ----
+
+(ert-deftest claude-repl-test-worktree-project-root-not-a-worktree ()
+  "Returns nil when workspace has no :worktree-p flag."
+  (claude-repl-test--with-clean-state
+    (should (null (claude-repl--worktree-project-root)))))
+
+(ert-deftest claude-repl-test-worktree-project-root-worktree-with-dir ()
+  "Returns :project-dir when workspace is a worktree with that key set."
+  (claude-repl-test--with-clean-state
+    (claude-repl--ws-put "test-ws" :worktree-p t)
+    (claude-repl--ws-put "test-ws" :project-dir "/some/worktree/path")
+    (should (equal (claude-repl--worktree-project-root) "/some/worktree/path"))))
+
+(ert-deftest claude-repl-test-worktree-project-root-worktree-without-dir ()
+  "Returns nil when workspace is a worktree but :project-dir is absent."
+  (claude-repl-test--with-clean-state
+    (claude-repl--ws-put "test-ws" :worktree-p t)
+    (should (null (claude-repl--worktree-project-root)))))
+
+(ert-deftest claude-repl-test-worktree-project-root-fallback-to-known-projects ()
+  "Falls back to projectile-known-projects when in-memory state is absent."
+  (claude-repl-test--with-clean-state
+    (let ((tmp (make-temp-file "claude-repl-test-ws-" t)))
+      (unwind-protect
+          (let* ((ws-dir (file-name-as-directory (expand-file-name "test-ws" tmp)))
+                 (projectile-known-projects (list ws-dir)))
+            (make-directory ws-dir t)
+            (write-region "" nil (expand-file-name ".claude-repl-worktree" ws-dir))
+            (should (equal (claude-repl--worktree-project-root) ws-dir)))
+        (delete-directory tmp t)))))
+
+(ert-deftest claude-repl-test-worktree-project-root-fallback-ignores-no-marker ()
+  "Fallback skips projectile projects that lack a .claude-repl-worktree marker."
+  (claude-repl-test--with-clean-state
+    (let ((tmp (make-temp-file "claude-repl-test-ws-" t)))
+      (unwind-protect
+          (let* ((ws-dir (file-name-as-directory (expand-file-name "test-ws" tmp)))
+                 (projectile-known-projects (list ws-dir)))
+            (make-directory ws-dir t)
+            ;; No .claude-repl-worktree written
+            (should (null (claude-repl--worktree-project-root))))
+        (delete-directory tmp t)))))
+
+(ert-deftest claude-repl-test-projectile-root-advice-with-explicit-dir ()
+  "When DIR is given explicitly, advice calls orig-fn unchanged."
+  (claude-repl-test--with-clean-state
+    (claude-repl--ws-put "test-ws" :worktree-p t)
+    (claude-repl--ws-put "test-ws" :project-dir "/worktree/path")
+    (let* ((called-with nil)
+           (fake-orig (lambda (&optional d) (setq called-with d) "/orig/result"))
+           (result (claude-repl--projectile-root-advice fake-orig "/explicit/dir")))
+      (should (equal called-with "/explicit/dir"))
+      (should (equal result "/orig/result")))))
+
+(ert-deftest claude-repl-test-projectile-root-advice-worktree-no-dir ()
+  "Without DIR, advice returns stored :project-dir for worktree workspaces."
+  (claude-repl-test--with-clean-state
+    (claude-repl--ws-put "test-ws" :worktree-p t)
+    (claude-repl--ws-put "test-ws" :project-dir "/worktree/path")
+    (let* ((orig-called nil)
+           (fake-orig (lambda (&optional _d) (setq orig-called t) "/orig/result"))
+           (result (claude-repl--projectile-root-advice fake-orig)))
+      (should (equal result "/worktree/path"))
+      (should (null orig-called)))))
+
+(ert-deftest claude-repl-test-projectile-root-advice-non-worktree-falls-through ()
+  "Without :worktree-p, advice falls through to orig-fn."
+  (claude-repl-test--with-clean-state
+    (let* ((orig-called nil)
+           (fake-orig (lambda (&optional _d) (setq orig-called t) "/orig/result"))
+           (result (claude-repl--projectile-root-advice fake-orig)))
+      (should (equal result "/orig/result"))
+      (should orig-called))))
+
 ;;;; ---- Tests: git-exit-code / git-branch-exists-p ----
 
 (ert-deftest claude-repl-test-git-exit-code-success ()
@@ -1286,23 +1361,25 @@ Returns the full SHA of the new commit."
 
 ;;;; ---- Tests: create-worktree-workspace (interactive) ----
 
-(ert-deftest claude-repl-test-create-worktree-workspace-default-base-is-head ()
-  "`SPC TAB n' with no prefix arg branches off HEAD (the current worktree)."
+(ert-deftest claude-repl-test-create-worktree-workspace-default-is-bare-metal-head ()
+  "`SPC TAB n' with no prefix arg branches off HEAD in bare-metal mode."
   (claude-repl-test--with-clean-state
-    (let ((captured-base nil))
+    (let ((captured-bare :unset)
+          (captured-base nil))
       (cl-letf (((symbol-function 'read-string)
                  (lambda (prompt &rest _)
                    (if (string-match-p "name" prompt) "my-ws" "")))
                 ((symbol-function 'claude-repl--do-create-worktree-workspace)
-                 (lambda (_name _bare _fork _prompt _cb _priority base)
-                   (setq captured-base base))))
+                 (lambda (_name bare _fork _prompt _cb _priority base)
+                   (setq captured-bare bare captured-base base))))
         (claude-repl-create-worktree-workspace nil)
+        (should (eq captured-bare t))
         (should (equal captured-base "HEAD"))))))
 
-(ert-deftest claude-repl-test-create-worktree-workspace-c-u-forces-bare-metal ()
-  "`C-u SPC TAB n' forces bare-metal and branches off HEAD."
+(ert-deftest claude-repl-test-create-worktree-workspace-c-u-forces-sandbox ()
+  "`C-u SPC TAB n' forces sandbox mode and branches off HEAD."
   (claude-repl-test--with-clean-state
-    (let ((captured-bare nil)
+    (let ((captured-bare :unset)
           (captured-base nil))
       (cl-letf (((symbol-function 'read-string)
                  (lambda (prompt &rest _)
@@ -1311,13 +1388,13 @@ Returns the full SHA of the new commit."
                  (lambda (_name bare _fork _prompt _cb _priority base)
                    (setq captured-bare bare captured-base base))))
         (claude-repl-create-worktree-workspace '(4))
-        (should (eq captured-bare t))
+        (should (null captured-bare))
         (should (equal captured-base "HEAD"))))))
 
 (ert-deftest claude-repl-test-create-worktree-workspace-c-u-c-u-base-is-origin-master ()
-  "`C-u C-u SPC TAB n' branches off origin/master in sandbox mode."
+  "`C-u C-u SPC TAB n' branches off origin/master in bare-metal mode."
   (claude-repl-test--with-clean-state
-    (let ((captured-bare nil)
+    (let ((captured-bare :unset)
           (captured-base nil))
       (cl-letf (((symbol-function 'read-string)
                  (lambda (prompt &rest _)
@@ -1326,7 +1403,7 @@ Returns the full SHA of the new commit."
                  (lambda (_name bare _fork _prompt _cb _priority base)
                    (setq captured-bare bare captured-base base))))
         (claude-repl-create-worktree-workspace '(16))
-        (should (null captured-bare))
+        (should (eq captured-bare t))
         (should (equal captured-base "origin/master"))))))
 
 (ert-deftest claude-repl-test-create-worktree-workspace-prefixes-preemptive-prompt ()
