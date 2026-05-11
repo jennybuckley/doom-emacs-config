@@ -1729,6 +1729,22 @@ and its result is threaded into `--resolve-worktree-paths'."
       (should (equal (nth 5 forwarded-args) :high))
       (should (equal (nth 7 forwarded-args) "/captured/root/")))))
 
+(ert-deftest claude-repl-test-create-worktree-from-command-no-prompt-passes-switch-callback ()
+  "Without a prompt, the switch callback is passed so the workspace opens immediately."
+  (let ((forwarded-cb :unset))
+    (cl-letf (((symbol-function 'claude-repl--do-create-worktree-workspace)
+               (lambda (&rest args) (setq forwarded-cb (nth 4 args)))))
+      (claude-repl--create-worktree-from-command "/root/" "ws-name" nil nil nil)
+      (should (eq forwarded-cb #'claude-repl--worktree-creation-switch-callback)))))
+
+(ert-deftest claude-repl-test-create-worktree-from-command-with-prompt-passes-nil-callback ()
+  "With a prompt, nil callback is passed so the workspace is created silently in background."
+  (let ((forwarded-cb :unset))
+    (cl-letf (((symbol-function 'claude-repl--do-create-worktree-workspace)
+               (lambda (&rest args) (setq forwarded-cb (nth 4 args)))))
+      (claude-repl--create-worktree-from-command "/root/" "ws-name" "do the thing" nil nil)
+      (should (null forwarded-cb)))))
+
 ;;;; ---- Tests: async-worktree-add base-commit ----
 
 (ert-deftest claude-repl-test-async-worktree-add-uses-base-commit ()

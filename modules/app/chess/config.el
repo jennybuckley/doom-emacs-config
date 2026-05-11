@@ -16,10 +16,7 @@
         (:map uci-mode-map
          :n "q" #'uci-mode-quit
          )
-        (:leader
-         :n "8e" #'uci-mode-run-engine
-         :n "8r" #'uci-mode-restart-engine
-         :n "8q" #'uci-mode-quit)))
+        ))
 
 (use-package! pygn-mode
   :init
@@ -51,9 +48,4 @@
          :ivomrg "O" #'cee-pygn-mode-fetch-integration-test-engine-output
          :ivomrg "i" #'cee-pygn-mode-fetch-integration-test-engine-input
          :ivomrg "I" #'cee-pygn-mode-open-integration-test-engine-input)
-        (:leader
-         :n "8?" #'cee-pygn-mode-open-integration-test-pgn
-         :n "8o" #'cee-pygn-mode-open-integration-test-engine-output
-         :n "8O" #'cee-pygn-mode-fetch-integration-test-engine-output
-         :n "8i" #'cee-pygn-mode-fetch-integration-test-engine-input
-         :n "8I" #'cee-pygn-mode-open-integration-test-engine-input)))
+        ))

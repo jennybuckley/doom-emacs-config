@@ -638,7 +638,9 @@ resumes the fork source's Claude session."
   (claude-repl--log name "create-worktree-from-command: name=%s git-root=%s priority=%s fork-session-id=%s"
                     name git-root priority fork-session-id)
   (claude-repl--do-create-worktree-workspace
-   name nil fork-session-id prompt nil priority nil git-root))
+   name nil fork-session-id prompt
+   (unless prompt #'claude-repl--worktree-creation-switch-callback)
+   priority nil git-root))
 
 (defcustom claude-repl-worktree-stagger-seconds 5
   "Seconds between staggered worktree creation timers.
